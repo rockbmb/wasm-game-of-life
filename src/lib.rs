@@ -2,6 +2,8 @@ mod utils;
 
 use wasm_bindgen::prelude::*;
 
+extern crate js_sys;
+
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
 #[cfg(feature = "wee_alloc")]
@@ -115,7 +117,8 @@ impl Universe {
         self.cells.as_ptr()
     }
 
-    pub fn new() -> Universe {
+    // Deterministic universe with random cell states, 64 by 64.
+    pub fn hardcoded_64_by_64() -> Universe {
         let width = 64;
         let height = 64;
 
@@ -134,6 +137,65 @@ impl Universe {
             height,
             cells,
         }
+    }
+
+    // Create a universe with a random initial position, in a non-deterministic
+    // manner unlike the method above.
+    // The grid's dimensions are passed as an argument.
+    pub fn new(width : u32, height : u32) -> Universe {
+        let cells = (0..width * height)
+            .map(|_| {
+                if js_sys::Math::random() < 0.5 {
+                    Cell::Alive
+                } else {
+                    Cell::Dead
+                }
+            })
+            .collect();
+
+        Universe {
+            width,
+            height,
+            cells,
+        }
+    }
+
+    // Create one instance of Gosper's glider at the center of
+    // the board.
+    pub fn new_glider_at(&mut self, row: u32, column: u32) {
+        let mut i = 0;
+        let neighbourhood = [
+                Cell::Dead, Cell::Alive, Cell::Alive,
+                Cell::Alive, Cell::Dead, Cell::Alive,
+                Cell::Dead, Cell::Dead, Cell::Alive,
+            ];
+
+        for delta_row in [self.height - 1, 0, 1].iter().cloned() {
+            for delta_col in [self.width - 1, 0, 1].iter().cloned() {
+                let neighbor_row = (row + delta_row) % self.height;
+                let neighbor_col = (column + delta_col) % self.width;
+                let idx = self.get_index(neighbor_row, neighbor_col);
+                self.cells[idx] = neighbourhood[i];
+                i += 1;
+            }
+        }
+    }
+
+    // Create a new, empty universe with the given size, and a glider
+    // at the center of the board.
+    pub fn new_with_spaceship(width : u32, height : u32) -> Universe {
+        let cells = (0..width * height)
+            .map(|_| { Cell::Dead })
+            .collect();
+
+        let mut u = Universe {
+            width,
+            height,
+            cells,
+        };
+
+        u.new_glider_at(width / 2, height / 2);
+        u
     }
 
     pub fn render(&self) -> String {
