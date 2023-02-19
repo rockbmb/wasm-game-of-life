@@ -3,6 +3,8 @@ mod utils;
 use wasm_bindgen::prelude::*;
 
 extern crate js_sys;
+extern crate fixedbitset;
+use fixedbitset::FixedBitSet;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -11,22 +13,13 @@ extern crate js_sys;
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// Individual cell in Conway's game of life.
-pub enum Cell {
-    Dead = 0,
-    Alive = 1,
-}
-
-#[wasm_bindgen]
 // Entirety of the board in Conway's game of life.
 // It wraps around the edges, and is in practice represented as a single vector
 // of cells, and not a matrix, to ease integration into Wasm.
 pub struct Universe {
     width: u32,
     height: u32,
-    cells: Vec<Cell>,
+    cells: FixedBitSet,
 }
 
 #[wasm_bindgen]
@@ -64,21 +57,21 @@ impl Universe {
                 let next_cell = match (cell, live_neighbors) {
                     // Rule 1: Any live cell with fewer than two live neighbours
                     // dies, as if caused by underpopulation.
-                    (Cell::Alive, x) if x < 2 => Cell::Dead,
+                    (true, x) if x < 2 => false,
                     // Rule 2: Any live cell with two or three live neighbours
                     // lives on to the next generation.
-                    (Cell::Alive, 2) | (Cell::Alive, 3) => Cell::Alive,
+                    (true, 2) | (true, 3) => true,
                     // Rule 3: Any live cell with more than three live
                     // neighbours dies, as if by overpopulation.
-                    (Cell::Alive, x) if x > 3 => Cell::Dead,
+                    (true, x) if x > 3 => false,
                     // Rule 4: Any dead cell with exactly three live neighbours
                     // becomes a live cell, as if by reproduction.
-                    (Cell::Dead, 3) => Cell::Alive,
+                    (false, 3) => true,
                     // All other cells remain in the same state.
                     (otherwise, _) => otherwise,
                 };
 
-                next[idx] = next_cell;
+                next.set(idx, next_cell);
             }
         }
 
@@ -90,9 +83,11 @@ use std::fmt;
 
 impl fmt::Display for Universe {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for line in self.cells.as_slice().chunks(self.width as usize) {
-            for &cell in line {
-                let symbol = if cell == Cell::Dead { '◻' } else { '◼' };
+        for row in 0..self.height {
+            for col in 0..self.width {
+                let index = self.get_index(row, col);
+                let cell = self.cells[index];
+                let symbol = if cell { '◼' } else { '◻' };
                 write!(f, "{}", symbol)?;
             }
             write!(f, "\n")?;
@@ -113,8 +108,8 @@ impl Universe {
         self.height
     }
 
-    pub fn cells(&self) -> *const Cell {
-        self.cells.as_ptr()
+    pub fn cells(&self) -> *const u32 {
+        self.cells.as_slice().as_ptr()
     }
 
     // Deterministic universe with random cell states, 64 by 64.
@@ -122,15 +117,12 @@ impl Universe {
         let width = 64;
         let height = 64;
 
-        let cells = (0..width * height)
-            .map(|i| {
-                if i % 2 == 0 || i % 7 == 0 {
-                    Cell::Alive
-                } else {
-                    Cell::Dead
-                }
-            })
-            .collect();
+        let size = (width * height) as usize;
+        let mut cells = FixedBitSet::with_capacity(size);
+
+        for i in 0..size {
+            cells.set(i, i % 2 == 0 || i % 7 == 0);
+        }
 
         Universe {
             width,
@@ -143,15 +135,15 @@ impl Universe {
     // manner unlike the method above.
     // The grid's dimensions are passed as an argument.
     pub fn new(width : u32, height : u32) -> Universe {
-        let cells = (0..width * height)
-            .map(|_| {
+        let size = (width * height) as usize;
+        let mut cells = FixedBitSet::with_capacity(size);
+        for i in 0 .. size {
                 if js_sys::Math::random() < 0.5 {
-                    Cell::Alive
+                    cells.set(i, true);
                 } else {
-                    Cell::Dead
+                    cells.set(i, false);
                 }
-            })
-            .collect();
+            };
 
         Universe {
             width,
@@ -165,9 +157,9 @@ impl Universe {
     pub fn new_glider_at(&mut self, row: u32, column: u32) {
         let mut i = 0;
         let neighbourhood = [
-                Cell::Dead, Cell::Alive, Cell::Alive,
-                Cell::Alive, Cell::Dead, Cell::Alive,
-                Cell::Dead, Cell::Dead, Cell::Alive,
+                false, true, true,
+                true, false, true,
+                false, false, true,
             ];
 
         for delta_row in [self.height - 1, 0, 1].iter().cloned() {
@@ -175,7 +167,7 @@ impl Universe {
                 let neighbor_row = (row + delta_row) % self.height;
                 let neighbor_col = (column + delta_col) % self.width;
                 let idx = self.get_index(neighbor_row, neighbor_col);
-                self.cells[idx] = neighbourhood[i];
+                self.cells.set(idx, neighbourhood[i]);
                 i += 1;
             }
         }
@@ -184,9 +176,12 @@ impl Universe {
     // Create a new, empty universe with the given size, and a glider
     // at the center of the board.
     pub fn new_with_spaceship(width : u32, height : u32) -> Universe {
-        let cells = (0..width * height)
-            .map(|_| { Cell::Dead })
-            .collect();
+        let size = (width * height) as usize;
+        let mut cells = FixedBitSet::with_capacity(size);
+
+        for i in 0 .. (width * height) as usize {
+            cells.set(i, false)
+        };
 
         let mut u = Universe {
             width,
@@ -201,4 +196,10 @@ impl Universe {
     pub fn render(&self) -> String {
         self.to_string()
     }
+}
+
+#[test]
+fn test_display() {
+    let universe = Universe::new_with_spaceship(16, 16);
+    print!("{}", universe.to_string());
 }
