@@ -24,6 +24,46 @@ pub struct Universe {
 
 #[wasm_bindgen]
 impl Universe {
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn cells(&self) -> *const u32 {
+        self.cells.as_slice().as_ptr()
+    }
+
+    /// Set the width of the universe.
+    ///
+    /// Resets all cells to the dead state.
+    pub fn set_width(&mut self, width: u32) {
+        self.width = width;
+
+        let size = (width * self.height) as usize;
+        self.cells.grow(size);
+
+        for i in 0..size {
+            self.cells.set(i, false);
+        }
+    }
+
+    /// Set the height of the universe.
+    ///
+    /// Resets all cells to the dead state.
+    pub fn set_height(&mut self, height: u32) {
+        self.height = height;
+
+        let size = (self.width * height) as usize;
+        self.cells.grow(size);
+
+        for i in 0..size {
+            self.cells.set(i, false);
+        }
+    }
+
     fn get_index(&self, row: u32, column: u32) -> usize {
         (row * self.width + column) as usize
     }
@@ -98,20 +138,9 @@ impl fmt::Display for Universe {
 }
 
 /// Public methods, exported to JavaScript.
+/// This `impl` block is mostly for constructors.
 #[wasm_bindgen]
 impl Universe {
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-
-    pub fn height(&self) -> u32 {
-        self.height
-    }
-
-    pub fn cells(&self) -> *const u32 {
-        self.cells.as_slice().as_ptr()
-    }
-
     // Deterministic universe with random cell states, 64 by 64.
     pub fn hardcoded_64_by_64() -> Universe {
         let width = 64;
@@ -196,6 +225,23 @@ impl Universe {
     pub fn render(&self) -> String {
         self.to_string()
     }
+}
+
+impl Universe {
+    /// Get the dead and alive values of the entire universe.
+    pub fn get_cells(&self) -> &FixedBitSet {
+        &self.cells
+    }
+
+    /// Set cells to be alive in a universe by passing the row and column
+    /// of each cell as an array.
+    pub fn set_cells(&mut self, cells: &[(u32, u32)]) {
+        for (row, col) in cells.iter().cloned() {
+            let idx = self.get_index(row, col);
+            self.cells.set(idx, true);
+        }
+    }
+
 }
 
 #[test]
