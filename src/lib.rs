@@ -4,6 +4,15 @@ use wasm_bindgen::prelude::*;
 
 extern crate js_sys;
 extern crate fixedbitset;
+extern  crate web_sys;
+
+// A macro to provide `println!(..)`-style syntax for `console.log` logging.
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
+
 use fixedbitset::FixedBitSet;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -94,6 +103,16 @@ impl Universe {
                 let cell = self.cells[idx];
                 let live_neighbors = self.live_neighbor_count(row, col);
 
+                /*
+                log!(
+                     "cell[{}, {}] is initially {:?} and has {} live neighbors",
+                     row,
+                     col,
+                     cell,
+                     live_neighbors
+                 );
+                */
+
                 let next_cell = match (cell, live_neighbors) {
                     // Rule 1: Any live cell with fewer than two live neighbours
                     // dies, as if caused by underpopulation.
@@ -111,7 +130,19 @@ impl Universe {
                     (otherwise, _) => otherwise,
                 };
 
+                //log!("    it becomes {:?}", next_cell);
+
                 next.set(idx, next_cell);
+
+                if self.cells[idx] != next[idx] {
+                    log!(
+                        "cell[{}, {}] is initially {:?} and became {}",
+                        row,
+                        col,
+                        self.cells[idx],
+                        next[idx]
+                    );
+                }
             }
         }
 
@@ -119,6 +150,7 @@ impl Universe {
     }
 }
 
+use core::panic;
 use std::fmt;
 
 impl fmt::Display for Universe {
@@ -143,6 +175,8 @@ impl fmt::Display for Universe {
 impl Universe {
     // Deterministic universe with random cell states, 64 by 64.
     pub fn hardcoded_64_by_64() -> Universe {
+
+        utils::set_panic_hook();
         let width = 64;
         let height = 64;
 
@@ -164,6 +198,8 @@ impl Universe {
     // manner unlike the method above.
     // The grid's dimensions are passed as an argument.
     pub fn new(width : u32, height : u32) -> Universe {
+        utils::set_panic_hook();
+
         let size = (width * height) as usize;
         let mut cells = FixedBitSet::with_capacity(size);
         for i in 0 .. size {
@@ -173,6 +209,13 @@ impl Universe {
                     cells.set(i, false);
                 }
             };
+
+        /*
+        Exercise 2 of the debugging chapter.
+        Uncomment this, comment the marked line in Cargo.toml, and run `wasm-pack build --release`.
+
+        panic!("Just for testing purposes");
+        */
 
         Universe {
             width,
@@ -205,6 +248,8 @@ impl Universe {
     // Create a new, empty universe with the given size, and a glider
     // at the center of the board.
     pub fn new_with_spaceship(width : u32, height : u32) -> Universe {
+        utils::set_panic_hook();
+
         let size = (width * height) as usize;
         let mut cells = FixedBitSet::with_capacity(size);
 
