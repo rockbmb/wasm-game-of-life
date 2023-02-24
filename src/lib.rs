@@ -150,7 +150,6 @@ impl Universe {
     }
 }
 
-use core::panic;
 use std::fmt;
 
 impl fmt::Display for Universe {
@@ -173,6 +172,11 @@ impl fmt::Display for Universe {
 /// This `impl` block is mostly for constructors.
 #[wasm_bindgen]
 impl Universe {
+    pub fn toggle_cell(&mut self, row: u32, column: u32) {
+        let idx = self.get_index(row, column);
+        self.cells.set(idx, !self.cells[idx]);
+    }
+
     // Deterministic universe with random cell states, 64 by 64.
     pub fn hardcoded_64_by_64() -> Universe {
 
@@ -224,47 +228,70 @@ impl Universe {
         }
     }
 
-    // Create one instance of Gosper's glider at the center of
-    // the board.
-    pub fn new_glider_at(&mut self, row: u32, column: u32) {
+    pub fn clear_all_cells(&mut self) {
+        for i in 0 .. (self.width() * self.height()) as usize {
+            self.cells.set(i, false)
+        };
+    }
+
+    // Reinitialize an already existing universe with a random state.
+    pub fn reinitialize_rng(&mut self) {
+        let size = (self.width() * self.height()) as usize;
+
+        for i in 0 .. size {
+            if js_sys::Math::random() < 0.5 {
+                self.cells.set(i, true);
+            } else {
+                self.cells.set(i, false);
+            }
+        };
+    }
+
+    // Given an array of `u8`s representting the cells' neighbourhood,
+    // set that cell's neighbours to the values in the array.
+    // Because an array or vector of `bool`s do not implement the `FromWasmAbi`
+    // trait, we must instead use `u8`s.
+    pub fn set_pattern_at(&mut self, row: u32, column: u32, neighbourhood : &[u8]) {
         let mut i = 0;
-        let neighbourhood = [
-                false, true, true,
-                true, false, true,
-                false, false, true,
-            ];
 
         for delta_row in [self.height - 1, 0, 1].iter().cloned() {
             for delta_col in [self.width - 1, 0, 1].iter().cloned() {
                 let neighbor_row = (row + delta_row) % self.height;
                 let neighbor_col = (column + delta_col) % self.width;
                 let idx = self.get_index(neighbor_row, neighbor_col);
-                self.cells.set(idx, neighbourhood[i]);
+                let cell = if neighbourhood[i] > 0 { true } else { false };
+                self.cells.set(idx, cell);
                 i += 1;
             }
         }
     }
 
-    // Create a new, empty universe with the given size, and a glider
-    // at the center of the board.
-    pub fn new_with_spaceship(width : u32, height : u32) -> Universe {
-        utils::set_panic_hook();
+    // Create one instance of Gosper's glider at the center of
+    // the board.
+    pub fn new_glider_at(&mut self, row: u32, column: u32) {
+        let neighbourhood = [
+                0, 1, 1,
+                1, 0, 1,
+                0, 0, 1,
+            ];
 
-        let size = (width * height) as usize;
-        let mut cells = FixedBitSet::with_capacity(size);
+        self.set_pattern_at(row, column, &neighbourhood);
 
-        for i in 0 .. (width * height) as usize {
-            cells.set(i, false)
-        };
+    }
 
-        let mut u = Universe {
-            width,
-            height,
-            cells,
-        };
+    fn new_traffic_light_at(&mut self, row: u32, column: u32) {
+        let neighbourhood = [
+            1, 1, 1,
+            1, 0, 1,
+            1, 1, 1,
+        ];
 
-        u.new_glider_at(width / 2, height / 2);
-        u
+        self.set_pattern_at(row, column, &neighbourhood);
+    }
+
+    pub fn new_pre_pulsar_at(&mut self, row: u32, column: u32) {
+        self.new_traffic_light_at(row, column + self.width() - 3);
+        self.new_traffic_light_at(row, column + 3);
     }
 
     pub fn render(&self) -> String {
@@ -291,6 +318,7 @@ impl Universe {
 
 #[test]
 fn test_display() {
-    let universe = Universe::new_with_spaceship(16, 16);
+    let mut universe = Universe::new(16, 16);
+    universe.clear_all_cells();
     print!("{}", universe.to_string());
 }
